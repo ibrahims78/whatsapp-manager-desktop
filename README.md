@@ -1,198 +1,173 @@
-# WhatsApp Manager Desktop
+<div align="center">
 
-A full-featured WhatsApp session manager as an Electron desktop app for Windows 10/11.
+  <img src="https://img.shields.io/badge/WhatsApp-Manager-25d366?style=for-the-badge&logo=whatsapp&logoColor=white" alt="WhatsApp Manager" />
 
-## Features
+  # 📱 WhatsApp Manager Desktop
 
-- **Multiple WhatsApp sessions** — manage many accounts simultaneously
-- **QR code scanning** — connect accounts directly from the UI
-- **Send all message types** — text, image, video, audio, file
-- **Real-time updates** — Socket.IO pushes session status and incoming messages instantly
-- **Webhook delivery** — forward incoming messages to any external URL with HMAC signature
-- **User management** — admin/employee roles with JWT authentication
-- **API keys** — programmatic access for external integrations (n8n, etc.)
-- **Audit logs** — full history of all system operations
-- **Dashboard** — stats overview and 7-day message chart
-- **Dark/Light mode** — persists across restarts
-- **Arabic/English UI** — toggle language at runtime
+  **A powerful multi-session WhatsApp automation desktop application for Windows**
 
-## Default Login
+  [![Release](https://img.shields.io/github/v/release/ibrahims78/whatsapp-manager-desktop?style=flat-square&logo=github&color=25d366)](https://github.com/ibrahims78/whatsapp-manager-desktop/releases/latest)
+  [![Downloads](https://img.shields.io/github/downloads/ibrahims78/whatsapp-manager-desktop/total?style=flat-square&logo=github&color=blue)](https://github.com/ibrahims78/whatsapp-manager-desktop/releases)
+  [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078D4?style=flat-square&logo=windows)](https://github.com/ibrahims78/whatsapp-manager-desktop/releases/latest)
+  [![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
+  [![Node](https://img.shields.io/badge/Node.js-20+-339933?style=flat-square&logo=node.js&logoColor=white)](https://nodejs.org)
+  [![Electron](https://img.shields.io/badge/Electron-28-47848F?style=flat-square&logo=electron&logoColor=white)](https://www.electronjs.org)
 
-```
-Username: admin
-Password: 123456
-```
-**Change this immediately after first launch.**
+  ---
 
----
+  ### 🔽 [Download Latest Release →](https://github.com/ibrahims78/whatsapp-manager-desktop/releases/latest)
 
-## Building the .exe (Windows)
+  </div>
 
-### Prerequisites
+  ---
 
-- Windows 10/11 x64
-- Node.js 20 or newer: https://nodejs.org
-- Git: https://git-scm.com
+  ## ✨ Features
 
-### Steps
+  | Feature | Description |
+  |--------|-------------|
+  | 📱 **Multi-Session** | Connect and manage multiple WhatsApp numbers simultaneously |
+  | 📤 **Rich Messaging** | Send text, images, videos, audio, and documents |
+  | 📊 **Analytics Dashboard** | Real-time message statistics and charts |
+  | 🔑 **API Key Management** | Full REST API for integration with n8n, Zapier, Make, etc. |
+  | 👥 **User Management** | Multi-user with role-based access control |
+  | 📋 **Audit Logs** | Complete activity history for accountability |
+  | 🌐 **REST API** | Automate message sending from any external system |
+  | 🗄️ **Local Database** | SQLite — no cloud, no subscriptions, data stays on your machine |
+  | 🔒 **Secure** | JWT authentication, rate limiting, bcrypt passwords |
 
-```bash
-# 1. Clone or copy this folder to your Windows machine
-cd whatsapp-manager-desktop
+  ---
 
-# 2. Run the build script (handles everything automatically)
-node build.js
+  ## 📦 Installation
 
-# Result:
-#   releases/WhatsApp Manager-win32-x64/WhatsApp Manager.exe
-#   releases/WhatsApp-Manager-v1.0.0-win32-x64.zip
-```
+  ### Option 1: Download Pre-built (Recommended)
 
-The build script will:
-1. Install all npm dependencies
-2. Build the React renderer (Vite)
-3. Compile the Express server (TypeScript → CommonJS)
-4. Compile the Electron main process
-5. Download/copy Chromium for WhatsApp sessions
-6. Package everything with `@electron/packager`
-7. Create a ZIP for distribution
+  1. Go to [**Releases**](https://github.com/ibrahims78/whatsapp-manager-desktop/releases/latest)
+  2. Download `WhatsApp-Manager-v1.0.0-win32-x64.zip`
+  3. Extract the ZIP anywhere on your PC
+  4. Double-click **`WhatsApp Manager.exe`**
+  5. No installation required — **fully portable!**
 
-### First Launch
+  ### Option 2: Build from Source
 
-Double-click `WhatsApp Manager.exe`. A loading screen appears while the embedded server starts (3–10 seconds), then the login page opens.
+  ```bash
+  # Clone the repository
+  git clone https://github.com/ibrahims78/whatsapp-manager-desktop.git
+  cd whatsapp-manager-desktop
 
-The database (`wa-manager.db`) and WhatsApp tokens (`wa-tokens/`) are created **next to the .exe** — keep them backed up.
+  # Install dependencies
+  npm install
 
----
+  # Build all (server + renderer + electron)
+  npm run build
 
-## Development Mode
+  # Run in development
+  npm run dev
+  ```
 
-Run the server and Vite dev server side-by-side:
+  ---
 
-```bash
-npm install
-# Terminal 1: start the Express server
-npm run dev:server
+  ## 🔐 Default Login
 
-# Terminal 2: start Vite + Electron
-npm run dev
-```
+  | Field    | Value    |
+  |----------|----------|
+  | Username | `admin`  |
+  | Password | `123456` |
 
-The UI is served by Vite on `http://127.0.0.1:5173` and proxied to the Express server on `:43210`.
+  > ⚠️ **Change your password immediately after first login!**
 
----
+  ---
 
-## Project Structure
+  ## 🌐 REST API
 
-```
-whatsapp-manager-desktop/
-├── electron/
-│   ├── main.ts          ← Electron main process (launches server, opens window)
-│   └── preload.ts       ← IPC bridge (exposes safe APIs to renderer)
-├── server/
-│   ├── app.ts           ← Express app (Helmet, CORS, rate limit, middleware)
-│   ├── index.ts         ← HTTP server + Socket.IO startup
-│   ├── db/
-│   │   ├── schema.ts    ← Drizzle ORM schema (SQLite)
-│   │   ├── index.ts     ← SQLite connection (better-sqlite3)
-│   │   └── migrate.ts   ← Auto-migrations + default admin seed
-│   ├── lib/
-│   │   ├── whatsapp-manager.ts  ← wppconnect sessions + Socket.IO events
-│   │   ├── auth.ts      ← JWT sign/verify, API key hashing, middleware
-│   │   ├── audit.ts     ← Audit log writer
-│   │   ├── logger.ts    ← pino logger (file in production, pretty in dev)
-│   │   └── rate-limit.ts ← express-rate-limit config
-│   └── routes/
-│       ├── auth.ts      ← POST /login, GET /me, POST /logout
-│       ├── sessions.ts  ← CRUD + connect/disconnect/qr/messages/webhook
-│       ├── send.ts      ← send/text|image|video|audio|file
-│       ├── users.ts     ← Admin user management
-│       ├── api-keys.ts  ← API key CRUD
-│       ├── dashboard.ts ← Stats + 7-day chart
-│       ├── audit-logs.ts ← Audit log reader (admin only)
-│       ├── n8n-workflow.ts ← n8n integration proxy
-│       └── health.ts    ← GET /healthz
-├── renderer/
-│   ├── index.html
-│   └── src/
-│       ├── App.tsx      ← wouter router + QueryClient
-│       ├── pages/       ← Login, Dashboard, Sessions, Send, Users, ApiKeys, AuditLogs
-│       ├── components/layout/  ← Sidebar + main layout
-│       ├── store/       ← Zustand: auth (token+user) + ui (theme, lang)
-│       ├── hooks/       ← useSocket (Socket.IO), useApi (React Query)
-│       └── lib/         ← api.ts (fetch wrapper), i18n.ts (en/ar)
-├── build/
-│   └── icon.ico         ← Place your 256×256 icon here
-├── resources/chromium/  ← Auto-populated by build.js
-├── build.js             ← Main build script
-├── vite.config.ts       ← Renderer build config
-├── tailwind.config.js
-├── tsconfig.server.json
-├── tsconfig.electron.json
-└── .env.example         ← Copy to .env and configure
-```
+  Once running, the API is available at `http://localhost:43210/api`
 
----
+  ### Authentication
+  ```bash
+  # Login and get token
+  curl -X POST http://localhost:43210/api/auth/login \
+    -H "Content-Type: application/json" \
+    -d '{"username":"admin","password":"123456"}'
+  ```
 
-## API Reference
+  ### Send a Message
+  ```bash
+  curl -X POST http://localhost:43210/api/send/text \
+    -H "Authorization: Bearer YOUR_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "sessionId": "my-session",
+      "to": "966501234567",
+      "message": "Hello from WhatsApp Manager! 👋"
+    }'
+  ```
 
-All endpoints are under `http://127.0.0.1:43210/api/`.
+  ### Using API Key (for integrations)
+  ```bash
+  curl -X POST http://localhost:43210/api/send/text \
+    -H "X-API-Key: YOUR_API_KEY" \
+    -H "Content-Type: application/json" \
+    -d '{"sessionId":"my-session","to":"966501234567","message":"Hello!"}'
+  ```
 
-**Authentication:** `Authorization: Bearer <token>` header or `session_token` cookie.  
-**API Key auth:** `X-API-Key: wm_...` header.
+  ---
 
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | /auth/login | Get JWT token |
-| GET | /auth/me | Current user info |
-| POST | /auth/logout | Clear session |
-| GET | /sessions | List all sessions |
-| POST | /sessions | Create session |
-| GET | /sessions/:id | Session detail |
-| DELETE | /sessions/:id | Delete session |
-| POST | /sessions/:id/connect | Start QR flow |
-| POST | /sessions/:id/disconnect | Disconnect |
-| GET | /sessions/:id/qr | Current QR code |
-| GET | /sessions/:id/messages | Message history |
-| PATCH | /sessions/:id/webhook | Update webhook URL |
-| POST | /sessions/:id/send/text | Send text |
-| POST | /sessions/:id/send/image | Send image |
-| POST | /sessions/:id/send/video | Send video |
-| POST | /sessions/:id/send/audio | Send audio |
-| POST | /sessions/:id/send/file | Send file |
-| GET | /dashboard/stats | Stats + chart |
-| GET | /users | List users (admin) |
-| POST | /users | Create user (admin) |
-| GET | /api-keys | My API keys |
-| POST | /api-keys | Generate API key |
-| DELETE | /api-keys/:id | Revoke API key |
-| GET | /audit-logs | Audit log (admin) |
-| GET | /healthz | Health check |
+  ## 🏗️ Architecture
 
----
+  ```
+  whatsapp-manager-desktop/
+  ├── electron/          # Electron main process & preload
+  ├── renderer/          # React 19 + Vite 6 frontend
+  │   └── src/
+  │       ├── pages/     # Dashboard, Sessions, Send, Users...
+  │       ├── store/     # Zustand state management
+  │       └── lib/       # API client, i18n
+  ├── server/            # Express 5 backend
+  │   ├── db/            # Drizzle ORM + SQLite schema
+  │   ├── lib/           # WhatsApp manager, auth, audit
+  │   └── routes/        # REST API endpoints
+  └── releases/          # Built distributable packages
+  ```
 
-## WebSocket Events
+  ---
 
-Connect to `http://127.0.0.1:43210` with Socket.IO, passing `auth: { token }`.
+  ## 🛠️ Tech Stack
 
-| Event | Direction | Payload |
-|-------|-----------|---------|
-| `qr` | Server → Client | `{ sessionId, qr: "data:image/png;base64,..." }` |
-| `session_status` | Server → Client | `{ sessionId, status, phoneNumber? }` |
-| `message` | Server → Client | `{ sessionId, from, to, type, body, timestamp }` |
+  | Layer | Technology |
+  |-------|-----------|
+  | Desktop | Electron 28 |
+  | Frontend | React 19, Vite 6, Tailwind CSS 3 |
+  | State | Zustand, React Query |
+  | Backend | Express 5, Node.js 20+ |
+  | WhatsApp | @whiskeysockets/baileys |
+  | Database | SQLite (sql.js), Drizzle ORM |
+  | Auth | JWT, bcrypt |
+  | Realtime | Socket.IO 4 |
 
----
+  ---
 
-## Security Notes
+  ## 🤝 Contributing
 
-1. **Change JWT_SECRET** — copy `.env.example` to `.env` and set a random 64-char hex string:
-   ```
-   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-   ```
-2. **Change admin password** immediately after first launch
-3. **Backup `wa-manager.db`** regularly — it contains all session data and hashed passwords
-4. **Backup `wa-tokens/`** — losing this folder means re-scanning all QR codes
+  Contributions are welcome! Please read our [contributing guidelines](.github/ISSUE_TEMPLATE/bug_report.md).
 
----
+  1. Fork the repository
+  2. Create your feature branch: `git checkout -b feature/amazing-feature`
+  3. Commit your changes: `git commit -m 'Add amazing feature'`
+  4. Push to the branch: `git push origin feature/amazing-feature`
+  5. Open a Pull Request
 
-*v1.0.0 — Built with Electron 28, Express 5, wppconnect, React 19, Tailwind CSS, Drizzle ORM (SQLite)*
+  ---
+
+  ## 📄 License
+
+  This project is licensed under the MIT License.
+
+  ---
+
+  <div align="center">
+
+  Made with ❤️ using Electron + React + Baileys
+
+  ⭐ **If you find this useful, please star the repository!** ⭐
+
+  </div>
+  
