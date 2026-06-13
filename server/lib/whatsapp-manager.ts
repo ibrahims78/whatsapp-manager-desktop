@@ -1,11 +1,3 @@
-import makeWASocket, {
-  DisconnectReason,
-  useMultiFileAuthState,
-  fetchLatestBaileysVersion,
-  makeCacheableSignalKeyStore,
-  WAMessage,
-  proto,
-} from '@whiskeysockets/baileys';
 import qrcode from 'qrcode';
 import path from 'path';
 import { existsSync, mkdirSync } from 'fs';
@@ -20,9 +12,23 @@ import fetch from 'node-fetch';
 import crypto from 'crypto';
 import pino from 'pino';
 
-type SessionStatus = 'connected' | 'disconnected' | 'connecting' | 'qr_ready' | 'error';
+// Baileys is ESM-only. TypeScript compiles `import()` to `require()` in CJS output,
+// which breaks ESM packages. Use `new Function` to emit a genuine runtime import().
+type BaileysModule = typeof import('@whiskeysockets/baileys');
+let _baileys: BaileysModule | null = null;
+// eslint-disable-next-line @typescript-eslint/no-implied-eval
+const _esmImport = new Function('m', 'return import(m)') as (m: string) => Promise<BaileysModule>;
+async function getBaileys(): Promise<BaileysModule> {
+  if (!_baileys) {
+    _baileys = await _esmImport('@whiskeysockets/baileys');
+  }
+  return _baileys;
+}
 
-type WASocket = ReturnType<typeof makeWASocket>;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type WASocket = any;
+
+type SessionStatus = 'connected' | 'disconnected' | 'connecting' | 'qr_ready' | 'error';
 
 interface SessionEntry {
   socket: WASocket | null;
@@ -65,16 +71,16 @@ export function initSocketServer(httpServer: HttpServer): void {
     pingInterval: 25_000,
   });
 
-  io.use((socket, next) => {
+  io.use((socket: WASocket, next: (err?: Error) => void) => {
     const token = socket.handshake.auth?.token as string | undefined;
     if (!token) return next(new Error('Authentication required'));
     const payload = verifyToken(token);
     if (!payload) return next(new Error('Invalid token'));
-    (socket as unknown as { data: Record<string, unknown> }).data.user = payload;
+    socket.data.user = payload;
     next();
   });
 
-  io.on('connection', (socket) => {
+  io.on('connection', (socket: WASocket) => {
     logger.info({ socketId: socket.id }, 'WebSocket client connected');
 
     sessions.forEach((entry, sessionId) => {
@@ -129,6 +135,15 @@ export async function connectSession(sessionId: string): Promise<void> {
   emitToAll('session_status', { sessionId, status: 'connecting' });
 
   try {
+    // Load baileys dynamically (ESM)
+    const {
+      default: makeWASocket,
+      DisconnectReason,
+      useMultiFileAuthState,
+      fetchLatestBaileysVersion,
+      makeCacheableSignalKeyStore,
+    } = await getBaileys();
+
     const authDir = path.join(TOKENS_DIR, sessionId);
     if (!existsSync(authDir)) mkdirSync(authDir, { recursive: true });
 
@@ -150,8 +165,12 @@ export async function connectSession(sessionId: string): Promise<void> {
 
     sock.ev.on('creds.update', saveCreds);
 
-    sock.ev.on('connection.update', async (update) => {
-      const { connection, lastDisconnect, qr } = update;
+    sock.ev.on('connection.update', async (update: Record<string, unknown>) => {
+      const { connection, lastDisconnect, qr } = update as {
+        connection?: string;
+        lastDisconnect?: { error?: unknown };
+        qr?: string;
+      };
 
       if (qr) {
         try {
@@ -195,7 +214,7 @@ export async function connectSession(sessionId: string): Promise<void> {
       }
     });
 
-    sock.ev.on('messages.upsert', async ({ messages: msgs }) => {
+    sock.ev.on('messages.upsert', async ({ messages: msgs }: { messages: WASocket[] }) => {
       for (const msg of msgs) {
         if (!msg.message || msg.key.fromMe) continue;
         const from = msg.key.remoteJid || '';
@@ -325,7 +344,8 @@ export async function sendMediaMessage(
   if (!sock) throw new Error('Session not connected');
   const jid = number.replace(/\D/g, '') + '@s.whatsapp.net';
 
-  const msgContent: Parameters<typeof sock.sendMessage>[1] =
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const msgContent: any =
     type === 'image'
       ? { image: data, caption, mimetype: mimeType }
       : type === 'video'
