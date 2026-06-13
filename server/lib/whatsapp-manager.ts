@@ -1,0 +1,338 @@
+import makeWASocket, {
+  DisconnectReason,
+  useMultiFileAuthState,
+  fetchLatestBaileysVersion,
+  makeCacheableSignalKeyStore,
+  WAMessage,
+  proto,
+} from '@whiskeysockets/baileys';
+import qrcode from 'qrcode';
+import path from 'path';
+import { existsSync, mkdirSync } from 'fs';
+import type { Server as HttpServer } from 'http';
+import { Server as SocketIOServer } from 'socket.io';
+import { Boom } from '@hapi/boom';
+import { db, whatsappSessionsTable, messagesTable, markDirty } from '../db';
+import { eq } from 'drizzle-orm';
+import { verifyToken } from './auth';
+import { logger } from './logger';
+import fetch from 'node-fetch';
+import crypto from 'crypto';
+import pino from 'pino';
+
+type SessionStatus = 'connected' | 'disconnected' | 'connecting' | 'qr_ready' | 'error';
+
+type WASocket = ReturnType<typeof makeWASocket>;
+
+interface SessionEntry {
+  socket: WASocket | null;
+  status: SessionStatus;
+  qrCode: string | null;
+  phoneNumber: string | null;
+  reconnectTimer: ReturnType<typeof setTimeout> | null;
+}
+
+const sessions = new Map<string, SessionEntry>();
+let io: SocketIOServer | null = null;
+
+const TOKENS_DIR =
+  process.env.NODE_ENV === 'production'
+    ? path.join(path.dirname(process.execPath), 'wa-tokens')
+    : path.join(process.cwd(), 'wa-tokens');
+
+if (!existsSync(TOKENS_DIR)) mkdirSync(TOKENS_DIR, { recursive: true });
+
+const silentLogger = pino({ level: 'silent' });
+
+function dbUpdate(sessionId: string, values: Record<string, unknown>): void {
+  (db.update(whatsappSessionsTable)
+    .set({ ...values, updatedAt: new Date().toISOString() } as Parameters<
+      ReturnType<typeof db.update>['set']
+    >[0])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .where(eq(whatsappSessionsTable.id, sessionId)) as any).run();
+  markDirty();
+}
+
+function emitToAll(event: string, data: unknown): void {
+  if (io) io.emit(event, data);
+}
+
+export function initSocketServer(httpServer: HttpServer): void {
+  io = new SocketIOServer(httpServer, {
+    cors: { origin: '*', methods: ['GET', 'POST'] },
+    pingTimeout: 60_000,
+    pingInterval: 25_000,
+  });
+
+  io.use((socket, next) => {
+    const token = socket.handshake.auth?.token as string | undefined;
+    if (!token) return next(new Error('Authentication required'));
+    const payload = verifyToken(token);
+    if (!payload) return next(new Error('Invalid token'));
+    (socket as unknown as { data: Record<string, unknown> }).data.user = payload;
+    next();
+  });
+
+  io.on('connection', (socket) => {
+    logger.info({ socketId: socket.id }, 'WebSocket client connected');
+
+    sessions.forEach((entry, sessionId) => {
+      socket.emit('session_status', { sessionId, status: entry.status, phoneNumber: entry.phoneNumber });
+      if (entry.qrCode && entry.status === 'qr_ready') {
+        socket.emit('qr', { sessionId, qr: entry.qrCode });
+      }
+    });
+
+    socket.on('disconnect', () => {
+      logger.info({ socketId: socket.id }, 'WebSocket client disconnected');
+    });
+  });
+
+  setInterval(() => {
+    if (io) io.emit('ping', { ts: Date.now() });
+  }, 30_000);
+}
+
+async function sendWebhook(
+  webhookUrl: string,
+  payload: Record<string, unknown>,
+  webhookSecret?: string
+): Promise<void> {
+  try {
+    const body = JSON.stringify(payload);
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (webhookSecret) {
+      const sig = crypto.createHmac('sha256', webhookSecret).update(body).digest('hex');
+      headers['X-WM-Signature'] = sig;
+    }
+    await fetch(webhookUrl, { method: 'POST', headers, body });
+  } catch (err) {
+    logger.warn({ webhookUrl, err }, 'Webhook delivery failed');
+  }
+}
+
+export async function connectSession(sessionId: string): Promise<void> {
+  const existing = sessions.get(sessionId);
+  if (existing?.status === 'connected' || existing?.status === 'connecting') return;
+
+  const entry: SessionEntry = {
+    socket: null,
+    status: 'connecting',
+    qrCode: null,
+    phoneNumber: null,
+    reconnectTimer: null,
+  };
+  sessions.set(sessionId, entry);
+
+  dbUpdate(sessionId, { status: 'connecting' });
+  emitToAll('session_status', { sessionId, status: 'connecting' });
+
+  try {
+    const authDir = path.join(TOKENS_DIR, sessionId);
+    if (!existsSync(authDir)) mkdirSync(authDir, { recursive: true });
+
+    const { state, saveCreds } = await useMultiFileAuthState(authDir);
+    const { version } = await fetchLatestBaileysVersion();
+
+    const sock = makeWASocket({
+      version,
+      logger: silentLogger,
+      auth: {
+        creds: state.creds,
+        keys: makeCacheableSignalKeyStore(state.keys, silentLogger),
+      },
+      generateHighQualityLinkPreview: false,
+      printQRInTerminal: false,
+    });
+
+    entry.socket = sock;
+
+    sock.ev.on('creds.update', saveCreds);
+
+    sock.ev.on('connection.update', async (update) => {
+      const { connection, lastDisconnect, qr } = update;
+
+      if (qr) {
+        try {
+          const qrImage = await qrcode.toDataURL(qr);
+          entry.qrCode = qrImage;
+          entry.status = 'qr_ready';
+          dbUpdate(sessionId, { status: 'qr_ready', qrCode: qrImage });
+          emitToAll('qr', { sessionId, qr: qrImage });
+          emitToAll('session_status', { sessionId, status: 'qr_ready' });
+        } catch (err) {
+          logger.error({ err }, 'QR image generation failed');
+        }
+      }
+
+      if (connection === 'open') {
+        const phone = sock.user?.id?.split(':')[0] || null;
+        entry.status = 'connected';
+        entry.phoneNumber = phone;
+        entry.qrCode = null;
+        dbUpdate(sessionId, {
+          status: 'connected',
+          phoneNumber: phone,
+          qrCode: null,
+          lastConnectedAt: new Date().toISOString(),
+        });
+        emitToAll('session_status', { sessionId, status: 'connected', phoneNumber: phone });
+        logger.info({ sessionId, phone }, 'Session ready');
+      }
+
+      if (connection === 'close') {
+        const statusCode = (lastDisconnect?.error as Boom)?.output?.statusCode;
+        const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+
+        logger.info({ sessionId, statusCode, shouldReconnect }, 'Connection closed');
+        entry.status = 'disconnected';
+        entry.phoneNumber = null;
+        dbUpdate(sessionId, { status: 'disconnected' });
+        emitToAll('session_status', { sessionId, status: 'disconnected' });
+
+        if (shouldReconnect) scheduleReconnect(sessionId);
+      }
+    });
+
+    sock.ev.on('messages.upsert', async ({ messages: msgs }) => {
+      for (const msg of msgs) {
+        if (!msg.message || msg.key.fromMe) continue;
+        const from = msg.key.remoteJid || '';
+        const text =
+          msg.message.conversation ||
+          msg.message.extendedTextMessage?.text ||
+          '';
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (db.insert(messagesTable).values({
+          sessionId,
+          direction: 'in',
+          type: 'text',
+          from_: from,
+          to_: sock.user?.id || '',
+          content: text,
+          mediaUrl: null,
+        }) as any).run();
+        markDirty();
+
+        emitToAll('message', { sessionId, from, text, timestamp: msg.messageTimestamp });
+
+        const [sessionRow] = db
+          .select({
+            webhookUrl: whatsappSessionsTable.webhookUrl,
+            webhookEvents: whatsappSessionsTable.webhookEvents,
+          })
+          .from(whatsappSessionsTable)
+          .where(eq(whatsappSessionsTable.id, sessionId))
+          .all();
+
+        if (sessionRow?.webhookUrl) {
+          const events: string[] = JSON.parse(sessionRow.webhookEvents || '[]');
+          if (events.includes('message') || events.length === 0) {
+            await sendWebhook(sessionRow.webhookUrl, {
+              event: 'message',
+              sessionId,
+              message: { from, text, timestamp: msg.messageTimestamp },
+            });
+          }
+        }
+      }
+    });
+  } catch (err) {
+    logger.error({ sessionId, err }, 'Client initialize failed');
+    entry.status = 'error';
+    dbUpdate(sessionId, { status: 'error' });
+    emitToAll('session_status', { sessionId, status: 'error' });
+    scheduleReconnect(sessionId);
+  }
+}
+
+function scheduleReconnect(sessionId: string): void {
+  const entry = sessions.get(sessionId);
+  if (!entry) return;
+  if (entry.reconnectTimer) clearTimeout(entry.reconnectTimer);
+  entry.reconnectTimer = setTimeout(async () => {
+    logger.info({ sessionId }, 'Attempting reconnect...');
+    await connectSession(sessionId);
+  }, 30_000);
+}
+
+export async function disconnectSession(sessionId: string): Promise<void> {
+  const entry = sessions.get(sessionId);
+  if (entry) {
+    if (entry.reconnectTimer) clearTimeout(entry.reconnectTimer);
+    if (entry.socket) {
+      try { await entry.socket.logout(); } catch { /* ignore */ }
+      try { entry.socket.end(undefined); } catch { /* ignore */ }
+      entry.socket = null;
+    }
+    entry.status = 'disconnected';
+    entry.phoneNumber = null;
+  }
+  dbUpdate(sessionId, { status: 'disconnected' });
+  emitToAll('session_status', { sessionId, status: 'disconnected' });
+}
+
+export function getSessionStatus(sessionId: string): {
+  status: SessionStatus;
+  phoneNumber: string | null;
+  qrCode: string | null;
+} {
+  const entry = sessions.get(sessionId);
+  if (!entry) return { status: 'disconnected', phoneNumber: null, qrCode: null };
+  return { status: entry.status, phoneNumber: entry.phoneNumber, qrCode: entry.qrCode };
+}
+
+export function getSessionSocket(sessionId: string): WASocket | null {
+  return sessions.get(sessionId)?.socket || null;
+}
+
+export async function restoreActiveSessions(): Promise<void> {
+  const allSessions = db.select().from(whatsappSessionsTable).all();
+  for (const s of allSessions) {
+    if (s.status === 'connected') {
+      logger.info({ sessionId: s.id }, 'Restoring session...');
+      connectSession(s.id).catch((err) =>
+        logger.error({ sessionId: s.id, err }, 'Failed to restore')
+      );
+    }
+  }
+}
+
+export async function shutdownAllSessions(): Promise<void> {
+  const ids = Array.from(sessions.keys());
+  await Promise.allSettled(ids.map(disconnectSession));
+}
+
+export async function sendTextMessage(sessionId: string, number: string, text: string): Promise<void> {
+  const sock = getSessionSocket(sessionId);
+  if (!sock) throw new Error('Session not connected');
+  const jid = number.replace(/\D/g, '') + '@s.whatsapp.net';
+  await sock.sendMessage(jid, { text });
+}
+
+export async function sendMediaMessage(
+  sessionId: string,
+  number: string,
+  type: 'image' | 'video' | 'audio' | 'document',
+  data: Buffer,
+  mimeType: string,
+  filename?: string,
+  caption?: string
+): Promise<void> {
+  const sock = getSessionSocket(sessionId);
+  if (!sock) throw new Error('Session not connected');
+  const jid = number.replace(/\D/g, '') + '@s.whatsapp.net';
+
+  const msgContent: Parameters<typeof sock.sendMessage>[1] =
+    type === 'image'
+      ? { image: data, caption, mimetype: mimeType }
+      : type === 'video'
+        ? { video: data, caption, mimetype: mimeType }
+        : type === 'audio'
+          ? { audio: data, mimetype: mimeType, ptt: false }
+          : { document: data, mimetype: mimeType, fileName: filename };
+
+  await sock.sendMessage(jid, msgContent);
+}
