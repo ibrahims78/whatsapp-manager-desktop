@@ -1,0 +1,11 @@
+node_modules/
+dist/
+releases/
+*.db
+wa-tokens/
+tokens/
+logs/
+public/uploads/
+resources/chromium/
+.env
+*.tsbuildinfo
