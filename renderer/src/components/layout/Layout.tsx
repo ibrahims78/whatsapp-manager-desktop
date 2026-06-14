@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { Link, useLocation } from 'wouter';
 import {
   LayoutDashboard, Smartphone, Send, Users, Key, ScrollText,
-  LogOut, Sun, Moon, Globe, Menu, X
+  LogOut, Sun, Moon, Globe, Menu, X, Workflow
 } from 'lucide-react';
 import { useState } from 'react';
 import { useAuthStore } from '../../store/auth';
@@ -11,12 +11,13 @@ import { api } from '../../lib/api';
 import { t } from '../../lib/i18n';
 
 const navItems = [
-  { path: '/', icon: LayoutDashboard, labelKey: 'nav.dashboard' },
-  { path: '/sessions', icon: Smartphone, labelKey: 'nav.sessions' },
-  { path: '/send', icon: Send, labelKey: 'nav.send' },
-  { path: '/users', icon: Users, labelKey: 'nav.users' },
-  { path: '/api-keys', icon: Key, labelKey: 'nav.apikeys' },
-  { path: '/audit-logs', icon: ScrollText, labelKey: 'nav.auditlogs' },
+  { path: '/', icon: LayoutDashboard, labelKey: 'nav.dashboard', adminOnly: false },
+  { path: '/sessions', icon: Smartphone, labelKey: 'nav.sessions', adminOnly: false },
+  { path: '/send', icon: Send, labelKey: 'nav.send', adminOnly: false },
+  { path: '/users', icon: Users, labelKey: 'nav.users', adminOnly: true },
+  { path: '/api-keys', icon: Key, labelKey: 'nav.apikeys', adminOnly: false },
+  { path: '/n8n', icon: Workflow, labelKey: 'nav.n8n', adminOnly: false },
+  { path: '/audit-logs', icon: ScrollText, labelKey: 'nav.auditlogs', adminOnly: true },
 ];
 
 export default function Layout({ children }: { children: ReactNode }) {
@@ -43,9 +44,8 @@ export default function Layout({ children }: { children: ReactNode }) {
       </div>
 
       <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto">
-        {navItems.map(({ path, icon: Icon, labelKey }) => {
-          if (labelKey === 'nav.users' && user?.role !== 'admin') return null;
-          if (labelKey === 'nav.auditlogs' && user?.role !== 'admin') return null;
+        {navItems.map(({ path, icon: Icon, labelKey, adminOnly }) => {
+          if (adminOnly && user?.role !== 'admin') return null;
           const active = path === '/' ? location === '/' : location.startsWith(path);
           return (
             <Link key={path} href={path} onClick={() => setSidebarOpen(false)}>

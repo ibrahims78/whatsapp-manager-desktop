@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
-import { UserPlus, Trash2, ShieldCheck, User } from 'lucide-react';
+import { UserPlus, Trash2, ShieldCheck, User, Pencil, X } from 'lucide-react';
 
 interface AppUser {
   id: number;
@@ -11,12 +11,18 @@ interface AppUser {
   createdAt: string | null;
 }
 
+type EditForm = { password: string; role: string; mustChangePassword: boolean };
+
 export default function UsersPage() {
   const queryClient = useQueryClient();
   const [showNew, setShowNew] = useState(false);
   const [form, setForm] = useState({ username: '', password: '', role: 'employee' });
   const [creating, setCreating] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [editingUser, setEditingUser] = useState<AppUser | null>(null);
+  const [editForm, setEditForm] = useState<EditForm>({ password: '', role: 'employee', mustChangePassword: false });
+  const [saving, setSaving] = useState(false);
+  const [editError, setEditError] = useState('');
 
   const { data, isLoading } = useQuery<{ users: AppUser[] }>({
     queryKey: ['users'],
@@ -50,6 +56,33 @@ export default function UsersPage() {
       alert(err instanceof Error ? err.message : 'Failed to delete');
     } finally {
       setDeletingId(null);
+    }
+  };
+
+  const openEdit = (user: AppUser) => {
+    setEditingUser(user);
+    setEditForm({ password: '', role: user.role, mustChangePassword: user.mustChangePassword });
+    setEditError('');
+  };
+
+  const saveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingUser) return;
+    setSaving(true);
+    setEditError('');
+    try {
+      const body: Record<string, unknown> = {
+        role: editForm.role,
+        mustChangePassword: editForm.mustChangePassword,
+      };
+      if (editForm.password) body.password = editForm.password;
+      await api.patch(`/api/users/${editingUser.id}`, body);
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      setEditingUser(null);
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : 'Failed to save');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -139,7 +172,7 @@ export default function UsersPage() {
                 <th className="px-4 py-3 text-left text-xs text-muted-foreground font-medium">User</th>
                 <th className="px-4 py-3 text-left text-xs text-muted-foreground font-medium">Role</th>
                 <th className="px-4 py-3 text-left text-xs text-muted-foreground font-medium">Created</th>
-                <th className="px-4 py-3 text-right text-xs text-muted-foreground font-medium"></th>
+                <th className="px-4 py-3 text-right text-xs text-muted-foreground font-medium">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -165,18 +198,99 @@ export default function UsersPage() {
                     {user.createdAt ? new Date(user.createdAt).toLocaleDateString() : '—'}
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <button
-                      onClick={() => deleteUser(user.id, user.username)}
-                      disabled={deletingId === user.id}
-                      className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg transition-colors disabled:opacity-50"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                    <div className="flex items-center justify-end gap-1">
+                      <button
+                        onClick={() => openEdit(user)}
+                        className="p-1.5 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-lg transition-colors"
+                        title="Edit user"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => deleteUser(user.id, user.username)}
+                        disabled={deletingId === user.id}
+                        className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg transition-colors disabled:opacity-50"
+                        title="Delete user"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Edit Modal */}
+      {editingUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/60" onClick={() => setEditingUser(null)} />
+          <div className="relative bg-card border border-border rounded-xl p-6 w-full max-w-md mx-4 space-y-5 shadow-2xl">
+            <div className="flex items-center justify-between">
+              <h2 className="font-semibold">Edit User — {editingUser.username}</h2>
+              <button onClick={() => setEditingUser(null)} className="text-muted-foreground hover:text-foreground transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={saveEdit} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">New Password <span className="text-muted-foreground font-normal">(leave blank to keep)</span></label>
+                <input
+                  type="password"
+                  value={editForm.password}
+                  onChange={(e) => setEditForm({ ...editForm, password: e.target.value })}
+                  placeholder="••••••"
+                  className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Role</label>
+                <select
+                  value={editForm.role}
+                  onChange={(e) => setEditForm({ ...editForm, role: e.target.value })}
+                  className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                >
+                  <option value="employee">Employee</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={editForm.mustChangePassword}
+                  onChange={(e) => setEditForm({ ...editForm, mustChangePassword: e.target.checked })}
+                  className="accent-primary w-4 h-4"
+                />
+                <span className="text-sm">Force password change on next login</span>
+              </label>
+
+              {editError && (
+                <p className="text-sm text-destructive bg-destructive/10 px-3 py-2 rounded-lg">{editError}</p>
+              )}
+
+              <div className="flex gap-2">
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="flex-1 py-2 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors"
+                >
+                  {saving ? 'Saving...' : 'Save Changes'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditingUser(null)}
+                  className="px-4 py-2 bg-muted text-foreground text-sm rounded-lg hover:bg-muted/70 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </div>

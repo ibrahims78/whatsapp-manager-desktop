@@ -12,6 +12,7 @@ import SendPage from './pages/SendPage';
 import UsersPage from './pages/UsersPage';
 import ApiKeysPage from './pages/ApiKeysPage';
 import AuditLogsPage from './pages/AuditLogsPage';
+import N8nPage from './pages/N8nPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -33,6 +34,7 @@ function AppRoutes() {
         <Route path="/send" component={SendPage} />
         <Route path="/users" component={UsersPage} />
         <Route path="/api-keys" component={ApiKeysPage} />
+        <Route path="/n8n" component={N8nPage} />
         <Route path="/audit-logs" component={AuditLogsPage} />
         <Route>
           <div className="flex items-center justify-center h-full text-muted-foreground">
