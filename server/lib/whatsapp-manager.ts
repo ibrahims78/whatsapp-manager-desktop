@@ -321,8 +321,13 @@ export function getSessionSocket(sessionId: string): WASocket | null {
 export async function restoreActiveSessions(): Promise<void> {
   const allSessions = db.select().from(whatsappSessionsTable).all();
   for (const s of allSessions) {
-    if (s.status === 'connected') {
-      logger.info({ sessionId: s.id }, 'Restoring session...');
+    const authDir = path.join(TOKENS_DIR, s.id);
+    const hasCredentials = existsSync(path.join(authDir, 'creds.json'));
+
+    // Restore if the DB says connected, OR if stored credentials exist (device still
+    // linked on the phone but server was restarted / crashed mid-session).
+    if (s.status === 'connected' || hasCredentials) {
+      logger.info({ sessionId: s.id, reason: s.status === 'connected' ? 'db_connected' : 'stored_creds' }, 'Restoring session...');
       connectSession(s.id).catch((err) =>
         logger.error({ sessionId: s.id, err }, 'Failed to restore')
       );
