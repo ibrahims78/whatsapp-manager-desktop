@@ -13,6 +13,7 @@ interface Session {
   webhookUrl: string | null;
   webhookEvents: string;
   features: string;
+  qrCode: string | null;
 }
 
 interface SessionStats {
@@ -53,13 +54,23 @@ export default function SessionDetailPage() {
       if (data.sessionId === id) setQrCode(data.qr);
     },
     session_status: (d: unknown) => {
-      const data = d as { sessionId: string };
+      const data = d as { sessionId: string; status: string };
       if (data.sessionId === id) {
         queryClient.invalidateQueries({ queryKey: ['session', id] });
-        setQrCode(null);
+        // Only clear QR when moving away from qr_ready (e.g. connected or disconnected).
+        // Do NOT clear when status is qr_ready — the qr event arrives just before and
+        // clearing here would hide the code immediately after it appears.
+        if (data.status !== 'qr_ready') setQrCode(null);
       }
     },
   });
+
+  // Seed QR from API response (covers the case where socket connected after QR was emitted)
+  useEffect(() => {
+    if (data?.session?.qrCode && data.session.status === 'qr_ready') {
+      setQrCode(data.session.qrCode);
+    }
+  }, [data?.session?.qrCode, data?.session?.status]);
 
   useEffect(() => {
     if (data?.session?.webhookUrl) setWebhookUrl(data.session.webhookUrl);
