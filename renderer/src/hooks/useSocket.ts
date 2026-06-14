@@ -20,10 +20,11 @@ export function useSocket(events: SocketEvents) {
 
     const socket = io(SOCKET_URL, {
       auth: { token },
-      transports: ['websocket', 'polling'],
+      transports: ['polling', 'websocket'],
       reconnection: true,
-      reconnectionAttempts: 10,
-      reconnectionDelay: 2000,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
     });
 
     socketRef.current = socket;
