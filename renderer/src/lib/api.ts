@@ -1,4 +1,4 @@
-const BASE_URL = import.meta.env.DEV ? 'http://127.0.0.1:43210' : '';
+const BASE_URL = '';
 
 const defaultHeaders = (): Record<string, string> => {
   const token = localStorage.getItem('wa_token');
@@ -30,4 +30,4 @@ export const api = {
   delete: <T>(path: string) => request<T>('DELETE', path),
 };
 
-export const SOCKET_URL = import.meta.env.DEV ? 'http://127.0.0.1:43210' : 'http://127.0.0.1:43210';
+export const SOCKET_URL = '';
