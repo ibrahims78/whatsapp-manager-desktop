@@ -13,7 +13,11 @@ const router = Router();
 const run = (q: any) => { (q as any).run(); markDirty(); };
 
 router.get('/', requireApiKeyOrAuth, (_req, res) => {
-  const sessions = db.select().from(whatsappSessionsTable).all();
+  const rows = db.select().from(whatsappSessionsTable).all();
+  const sessions = rows.map((s) => {
+    const live = getSessionStatus(s.id);
+    return { ...s, ...live };
+  });
   res.json({ sessions });
 });
 
