@@ -340,10 +340,19 @@ export async function shutdownAllSessions(): Promise<void> {
   await Promise.allSettled(ids.map(disconnectSession));
 }
 
+async function resolveJid(sock: ReturnType<BaileysModule['makeWASocket']>, number: string): Promise<string> {
+  const clean = number.replace(/\D/g, '');
+  const results = await (sock as any).onWhatsApp(clean);
+  if (!results || results.length === 0 || !results[0].exists) {
+    throw new Error(`Number ${clean} is not registered on WhatsApp`);
+  }
+  return results[0].jid as string;
+}
+
 export async function sendTextMessage(sessionId: string, number: string, text: string): Promise<void> {
   const sock = getSessionSocket(sessionId);
   if (!sock) throw new Error('Session not connected');
-  const jid = number.replace(/\D/g, '') + '@s.whatsapp.net';
+  const jid = await resolveJid(sock as any, number);
   await sock.sendMessage(jid, { text });
 }
 
@@ -358,7 +367,7 @@ export async function sendMediaMessage(
 ): Promise<void> {
   const sock = getSessionSocket(sessionId);
   if (!sock) throw new Error('Session not connected');
-  const jid = number.replace(/\D/g, '') + '@s.whatsapp.net';
+  const jid = await resolveJid(sock as any, number);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const msgContent: any =
