@@ -1,6 +1,6 @@
 import qrcode from 'qrcode';
 import path from 'path';
-import { existsSync, mkdirSync } from 'fs';
+import { existsSync, mkdirSync, rmSync } from 'fs';
 import type { Server as HttpServer } from 'http';
 import { Server as SocketIOServer } from 'socket.io';
 import { Boom } from '@hapi/boom';
@@ -207,8 +207,19 @@ export async function connectSession(sessionId: string): Promise<void> {
         logger.info({ sessionId, statusCode, shouldReconnect }, 'Connection closed');
         entry.status = 'disconnected';
         entry.phoneNumber = null;
-        dbUpdate(sessionId, { status: 'disconnected' });
+        entry.qrCode = null;
+        dbUpdate(sessionId, { status: 'disconnected', qrCode: null });
         emitToAll('session_status', { sessionId, status: 'disconnected' });
+
+        if (!shouldReconnect) {
+          // WhatsApp revoked the session — clear stored credentials so next
+          // connect attempt starts fresh with a new QR scan instead of reusing
+          // the revoked credentials and immediately getting 401 again.
+          const authDir = path.join(TOKENS_DIR, sessionId);
+          if (existsSync(authDir)) {
+            try { rmSync(authDir, { recursive: true, force: true }); } catch { /* ignore */ }
+          }
+        }
 
         if (shouldReconnect) scheduleReconnect(sessionId);
       }
