@@ -17,6 +17,10 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText })) as { error?: string };
+    // Propagate must_change_password so App.tsx can redirect
+    if (res.status === 403 && err.error === 'must_change_password') {
+      throw new Error('must_change_password');
+    }
     throw new Error(err.error || `HTTP ${res.status}`);
   }
 

@@ -13,6 +13,7 @@ import UsersPage from './pages/UsersPage';
 import ApiKeysPage from './pages/ApiKeysPage';
 import AuditLogsPage from './pages/AuditLogsPage';
 import N8nPage from './pages/N8nPage';
+import ChangePasswordPage from './pages/ChangePasswordPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -24,6 +25,7 @@ function AppRoutes() {
   const user = useAuthStore((s) => s.user);
 
   if (!user) return <LoginPage />;
+  if (user.mustChangePassword) return <ChangePasswordPage />;
 
   return (
     <Layout>

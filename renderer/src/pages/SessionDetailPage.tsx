@@ -5,7 +5,7 @@ import { api } from '../lib/api';
 import { useSocket } from '../hooks/useSocket';
 import {
   Wifi, WifiOff, Loader2, QrCode, AlertCircle, Link, Zap,
-  MessageSquare, Settings, ArrowUpRight, ArrowDownLeft, LayoutGrid,
+  MessageSquare, Settings, ArrowUpRight, ArrowDownLeft, LayoutGrid, Clock,
 } from 'lucide-react';
 
 interface Session {
@@ -14,9 +14,8 @@ interface Session {
   status: string;
   phoneNumber: string | null;
   webhookUrl: string | null;
-  webhookEvents: string;
-  features: string;
   qrCode: string | null;
+  lastConnectedAt: string | null;
 }
 
 interface SessionStats {
@@ -36,12 +35,6 @@ interface Message {
   createdAt: string | null;
 }
 
-const ALL_EVENTS = ['message', 'status', 'qr'];
-
-const FEATURES_CONFIG = [
-  { key: 'storeIncomingMessages', label: 'Store incoming messages', description: 'Save received messages to the database' },
-  { key: 'autoReadReceipts', label: 'Auto read receipts', description: 'Mark received messages as read automatically' },
-];
 
 const statusConfig: Record<string, { label: string; color: string; bg: string }> = {
   connected: { label: 'Connected', color: 'text-primary', bg: 'bg-primary/15' },
@@ -59,10 +52,7 @@ export default function SessionDetailPage() {
   const [tab, setTab] = useState<Tab>('overview');
   const [qrCode, setQrCode] = useState<string | null>(null);
   const [webhookUrl, setWebhookUrl] = useState('');
-  const [webhookEvents, setWebhookEvents] = useState<string[]>(['message']);
-  const [features, setFeatures] = useState<Record<string, boolean>>({});
   const [savingWebhook, setSavingWebhook] = useState(false);
-  const [savingFeatures, setSavingFeatures] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [msgPage, setMsgPage] = useState(1);
 
@@ -105,10 +95,8 @@ export default function SessionDetailPage() {
   useEffect(() => {
     if (data?.session) {
       setWebhookUrl(data.session.webhookUrl || '');
-      try { setWebhookEvents(JSON.parse(data.session.webhookEvents || '["message"]')); } catch { setWebhookEvents(['message']); }
-      try { setFeatures(JSON.parse(data.session.features || '{}')); } catch { setFeatures({}); }
     }
-  }, [data?.session]);
+  }, [data?.session?.webhookUrl]);
 
   const session = data?.session;
 
@@ -133,28 +121,10 @@ export default function SessionDetailPage() {
     try {
       await api.patch(`/api/sessions/${id}/webhook`, {
         webhookUrl: webhookUrl || null,
-        events: webhookEvents,
+        events: ['message'],
       });
     } catch (e) { alert(String(e)); }
     finally { setSavingWebhook(false); }
-  };
-
-  const saveFeatures = async () => {
-    setSavingFeatures(true);
-    try {
-      await api.patch(`/api/sessions/${id}/features`, { features });
-    } catch (e) { alert(String(e)); }
-    finally { setSavingFeatures(false); }
-  };
-
-  const toggleEvent = (ev: string) => {
-    setWebhookEvents(prev =>
-      prev.includes(ev) ? prev.filter(e => e !== ev) : [...prev, ev]
-    );
-  };
-
-  const toggleFeature = (key: string) => {
-    setFeatures(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
   if (isLoading) return <div className="animate-pulse space-y-4"><div className="h-8 bg-card rounded w-48" /><div className="h-40 bg-card rounded" /></div>;
@@ -200,12 +170,22 @@ export default function SessionDetailPage() {
       {tab === 'overview' && (
         <>
           <div className="bg-card border border-border rounded-xl p-5 space-y-4">
-            {session.phoneNumber && (
-              <div>
-                <p className="text-xs text-muted-foreground mb-0.5">Phone Number</p>
-                <p className="font-mono text-sm">+{session.phoneNumber}</p>
-              </div>
-            )}
+            <div className="flex flex-wrap gap-6">
+              {session.phoneNumber && (
+                <div>
+                  <p className="text-xs text-muted-foreground mb-0.5">Phone Number</p>
+                  <p className="font-mono text-sm">+{session.phoneNumber}</p>
+                </div>
+              )}
+              {session.lastConnectedAt && (
+                <div>
+                  <p className="text-xs text-muted-foreground mb-0.5 flex items-center gap-1">
+                    <Clock className="w-3 h-3" /> Last Connected
+                  </p>
+                  <p className="text-sm">{new Date(session.lastConnectedAt).toLocaleString()}</p>
+                </div>
+              )}
+            </div>
             <div className="flex gap-2 flex-wrap">
               {session.status !== 'connected' && session.status !== 'connecting' && (
                 <button
@@ -351,22 +331,10 @@ export default function SessionDetailPage() {
                 <p className="text-xs text-muted-foreground">Incoming messages will be POSTed to this URL with HMAC-SHA256 signature.</p>
               </div>
 
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Events</label>
-                <div className="flex flex-wrap gap-3">
-                  {ALL_EVENTS.map((ev) => (
-                    <label key={ev} className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={webhookEvents.includes(ev)}
-                        onChange={() => toggleEvent(ev)}
-                        className="accent-primary w-4 h-4"
-                      />
-                      <span className="text-sm font-mono">{ev}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
+              <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                <span className="inline-block w-2 h-2 rounded-full bg-primary" />
+                Triggers on: <code className="font-mono">message</code> — fires when an incoming message is received.
+              </p>
 
               <button
                 type="submit"
@@ -376,37 +344,6 @@ export default function SessionDetailPage() {
                 {savingWebhook ? 'Saving...' : 'Save Webhook'}
               </button>
             </form>
-          </div>
-
-          {/* Features */}
-          <div className="bg-card border border-border rounded-xl p-5 space-y-4">
-            <h2 className="font-semibold flex items-center gap-2">
-              <Settings className="w-4 h-4 text-muted-foreground" />
-              Session Features
-            </h2>
-            <div className="space-y-3">
-              {FEATURES_CONFIG.map(({ key, label, description }) => (
-                <label key={key} className="flex items-start gap-3 cursor-pointer group">
-                  <input
-                    type="checkbox"
-                    checked={!!features[key]}
-                    onChange={() => toggleFeature(key)}
-                    className="accent-primary w-4 h-4 mt-0.5 shrink-0"
-                  />
-                  <div>
-                    <p className="text-sm font-medium group-hover:text-primary transition-colors">{label}</p>
-                    <p className="text-xs text-muted-foreground">{description}</p>
-                  </div>
-                </label>
-              ))}
-            </div>
-            <button
-              onClick={saveFeatures}
-              disabled={savingFeatures}
-              className="px-4 py-2 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors"
-            >
-              {savingFeatures ? 'Saving...' : 'Save Features'}
-            </button>
           </div>
         </div>
       )}
