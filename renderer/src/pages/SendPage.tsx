@@ -43,6 +43,7 @@ export default function SendPage() {
   const [mediaUrl, setMediaUrl] = useState('');
   const [caption, setCaption] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [filename, setFilename] = useState('');
   const [sending, setSending] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
@@ -61,6 +62,7 @@ export default function SendPage() {
     setMediaUrl('');
     setCaption('');
     setSelectedFile(null);
+    setFilename('');
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -96,6 +98,9 @@ export default function SendPage() {
           if (caption && (activeTab === 'image' || activeTab === 'video')) {
             form.append('caption', caption);
           }
+          if (activeTab === 'file' && filename.trim()) {
+            form.append('filename', filename.trim());
+          }
         } else {
           if (activeTab === 'image') {
             form.append('imageUrl', mediaUrl);
@@ -107,6 +112,7 @@ export default function SendPage() {
             form.append('audioUrl', mediaUrl);
           } else if (activeTab === 'file') {
             form.append('fileUrl', mediaUrl);
+            if (filename.trim()) form.append('filename', filename.trim());
           }
         }
 
@@ -126,6 +132,7 @@ export default function SendPage() {
       setText('');
       setMediaUrl('');
       setCaption('');
+      setFilename('');
       setSelectedFile(null);
       setTimeout(() => setSuccess(false), 3000);
     } catch (err) {
@@ -304,6 +311,21 @@ export default function SendPage() {
                     placeholder="Optional caption..."
                     className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
                   />
+                </div>
+              )}
+
+              {/* Filename for file type */}
+              {activeTab === 'file' && (
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium">File Name <span className="text-muted-foreground font-normal">(optional)</span></label>
+                  <input
+                    type="text"
+                    value={filename}
+                    onChange={(e) => setFilename(e.target.value)}
+                    placeholder="document.pdf"
+                    className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  />
+                  <p className="text-xs text-muted-foreground">Override the displayed filename in WhatsApp</p>
                 </div>
               )}
             </div>
